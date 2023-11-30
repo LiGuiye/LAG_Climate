@@ -1,0 +1,25 @@
+{
+    "dataset_name": "Solar_07-14",
+    "channel": 2,
+    "data_size": 512,
+    "lr": 0.004,
+    "noise_dim": 64,
+    "n_critic": 4,
+    "residual_blocks": 8,
+    "residual_scaling": 0.125,
+    "kernelSize": 1,
+    "max_scale": 64,
+    "mse_weight": 10,
+    "trial_name": "results/Solar/Solar_07-14_bs1_epoch15_lr4e-3_64X",
+    "batch_size": 1,
+    "report_step": 140000,
+    "epoch": "15,15",
+    "memtest": false,
+    "reset": true,
+    "sample_indices": [
+        1,
+        111,
+        83,
+        94
+    ]
+}
