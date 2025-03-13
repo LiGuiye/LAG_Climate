@@ -1,6 +1,6 @@
 # Generative Adversarial Models for Extreme Geospatial Downscaling
 
-[![Paper](https://img.shields.io/badge/paper-arxiv.2402.14049-B31B1B.svg)](https://arxiv.org/abs/2402.14049)
+[![GitHub](https://img.shields.io/badge/GitHub-LAG_Climate-white.svg)](https://github.com/LiGuiye/LAG_Climate) [![Paper](https://img.shields.io/badge/Paper-arxiv.2402.14049-B31B1B.svg)](https://arxiv.org/abs/2402.14049) [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LiGuiye/LAG_Climate/blob/main/test.ipynb)
 
 ## Abstract
 
