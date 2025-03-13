@@ -47,7 +47,7 @@ We recommend using Anaconda for package management. A GPU is highly recommended.
 ```bash
 conda create -n LAG_Climate python==3.9
 conda activate LAG_Climate
-pip install git+https://github.com/LiGuiye/LAG_Climate.git --extra-index-url https://download.pytorch.org/whl/cu116
+pip install -r requirements.txt
 ```
 
 ## Model training and testing
