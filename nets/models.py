@@ -115,135 +115,67 @@ class DownscaleBlock(nn.Module):
 class Generator(nn.Module):
     def __init__(
         self,
-        image_channel: int = 2,
+        channels: int = 2,
         noise_dim: int = 64,
         residual_blocks: int = 8,
-        kernelSize_toRGB: int = 1,
-        residual_scaling = 0
+        kernelSize: int = 1, # to IMG
+        residual_scaling: float = 0.0
     ):
         super().__init__()
         # input dimension (image + eps)
-        c_in = image_channel + noise_dim
-        self.conv = ScaledConv2dWithAct
+        conv = ScaledConv2dWithAct
 
         # 1 conv and 8 residual block as fixed beginning -------------
         self.input_layer = nn.Sequential(
-            self.conv(c_in, 256, 3, activation=None),
+            conv(channels + noise_dim, 256, 3),
             *[
-                ResidualBlock(256, conv=self.conv, block_scaling=residual_scaling)
+                ResidualBlock(256, block_scaling=residual_scaling)
                 for _ in range(residual_blocks)
             ]
         )
 
         # changing layers depends on different stage -------------
+
         # upsample block
-        self.downscale_x2 = DownscaleBlock(256, 128)
-        self.downscale_x4 = DownscaleBlock(128, 64)
-        self.downscale_x8 = DownscaleBlock(64, 64)
-        self.downscale_x16 = DownscaleBlock(64, 64)
-        self.downscale_x32 = DownscaleBlock(64, 64)
-        self.downscale_x64 = DownscaleBlock(64, 64)
-        # to_rgb
-        self.to_rgb = self.conv(256, image_channel, kernelSize_toRGB, activation=None)
-        self.to_rgb_scale2 = self.conv(
-            128, image_channel, kernelSize_toRGB, activation=None
-        )
-        self.to_rgb_scale4 = self.conv(
-            64, image_channel, kernelSize_toRGB, activation=None
-        )
-        self.to_rgb_scale8 = self.conv(
-            64, image_channel, kernelSize_toRGB, activation=None
-        )
-        self.to_rgb_scale16 = self.conv(
-            64, image_channel, kernelSize_toRGB, activation=None
-        )
-        self.to_rgb_scale32 = self.conv(
-            64, image_channel, kernelSize_toRGB, activation=None
-        )
-        self.to_rgb_scale64 = self.conv(
-            64, image_channel, kernelSize_toRGB, activation=None
+        self.downscale = nn.ModuleList(
+            [
+                DownscaleBlock(256, 128),
+                DownscaleBlock(128, 64),
+                DownscaleBlock(64, 64),
+                DownscaleBlock(64, 64),
+                DownscaleBlock(64, 64),
+                DownscaleBlock(64, 64)
+            ]
         )
 
-        self.max_scale_factor = 64
-
-    def progress(self, feat, module):
-        out = module(downscale(feat))
-        return out
-
-    def output(self, feat1, feat2, module1, module2, alpha):
-        if 0 <= alpha < 1:
-            # transition stage
-            skip_rgb = downscale(module1(feat1))
-            out = (1 - alpha) * skip_rgb + alpha * module2(feat2)
-        else:
-            # training stage
-            out = module2(feat2)
-        return out
+        # to_Img
+        self.toImg = nn.ModuleList(
+            [
+                conv(256, channels, kernelSize),
+                conv(128, channels, kernelSize),
+                conv(64, channels, kernelSize),
+                conv(64, channels, kernelSize),
+                conv(64, channels, kernelSize),
+                conv(64, channels, kernelSize),
+                conv(64, channels, kernelSize)
+            ]
+        )
 
     def forward(self, input, eps, scale_factor, alpha):
         image = self.input_layer(torch.cat([input, eps], dim=1))
 
-        image_scale2 = self.progress(image, self.downscale_x2)
-        if scale_factor == 2:
-            out = self.output(
-                image, image_scale2, self.to_rgb, self.to_rgb_scale2, alpha
-            )
-            return out
+        imgs = [image]
+        log_scale = scale_factor.bit_length() - 1 # int(log2)
+        for i in range(log_scale):
+            imgs.append(self.downscale[i](downscale(imgs[i])))
 
-        image_scale4 = self.progress(image_scale2, self.downscale_x4)
-        if scale_factor == 4:
-            out = self.output(
-                image_scale2,
-                image_scale4,
-                self.to_rgb_scale2,
-                self.to_rgb_scale4,
-                alpha,
-            )
-            return out
-
-        image_scale8 = self.progress(image_scale4, self.downscale_x8)
-        if scale_factor == 8:
-            out = self.output(
-                    image_scale4,
-                    image_scale8,
-                    self.to_rgb_scale4,
-                    self.to_rgb_scale8,
-                    alpha,
-                )
-            return out
-
-        image_scale16 = self.progress(image_scale8, self.downscale_x16)
-        if scale_factor == 16:
-            out = self.output(
-                image_scale8,
-                image_scale16,
-                self.to_rgb_scale8,
-                self.to_rgb_scale16,
-                alpha,
-            )
-            return out
-
-        image_scale32 = self.progress(image_scale16, self.downscale_x32)
-        if scale_factor == 32:
-            out = self.output(
-                image_scale16,
-                image_scale32,
-                self.to_rgb_scale16,
-                self.to_rgb_scale32,
-                alpha,
-            )
-            return out
-
-        image_scale64 = self.progress(image_scale32, self.downscale_x64)
-        if scale_factor == 64:
-            out = self.output(
-                image_scale32,
-                image_scale64,
-                self.to_rgb_scale32,
-                self.to_rgb_scale64,
-                alpha,
-            )
-            return out
+        if 0 <= alpha < 1:
+            # transition stage
+            out = (1 - alpha) * downscale(self.toImg[i](imgs[-2])) + alpha * self.toImg[i+1](imgs[-1])
+        else:
+            # training stage
+            out = self.toImg[i+1](imgs[-1])
+        return out
 
 
 class SpaceToChannel(nn.Module):
@@ -274,42 +206,28 @@ class UpscaleBlock(nn.Module):
 class Discriminator(nn.Module):
     def __init__(
         self,
-        image_channel: int = 2,
+        channels: int = 2,
         residual_blocks: int = 8,
-        kernelSize_fromRGB: int = 1,
+        kernelSize: int = 1, # from IMG
     ):
         super().__init__()
+        conv = ScaledConv2dWithAct
 
-        self.conv = ScaledConv2dWithAct
         # changing layers depends on different stage -------------
-        self.from_rgb = nn.ModuleList(
+        self.fromImg = nn.ModuleList(
             [
-                self.conv(
-                    image_channel, 64, kernelSize_fromRGB, activation='lrelu'
-                ),  # x64
-                self.conv(
-                    image_channel, 64, kernelSize_fromRGB, activation='lrelu'
-                ),  # x32
-                self.conv(
-                    image_channel, 64, kernelSize_fromRGB, activation='lrelu'
-                ),  # x16
-                self.conv(
-                    image_channel, 64, kernelSize_fromRGB, activation='lrelu'
-                ),  # x8
-                self.conv(
-                    image_channel, 64, kernelSize_fromRGB, activation='lrelu'
-                ),  # x4
-                self.conv(
-                    image_channel, 128, kernelSize_fromRGB, activation='lrelu'
-                ),  # x2
-                self.conv(
-                    image_channel, 256, kernelSize_fromRGB, activation='lrelu'
-                ),  # x2 transition
+                conv(channels, 64, kernelSize, activation='lrelu'), # x64
+                conv(channels, 64, kernelSize, activation='lrelu'), # x32
+                conv(channels, 64, kernelSize, activation='lrelu'), # x16
+                conv(channels, 64, kernelSize, activation='lrelu'), # x8
+                conv(channels, 64, kernelSize, activation='lrelu'), # x4
+                conv(channels, 128, kernelSize, activation='lrelu'), # x2
+                conv(channels, 256, kernelSize, activation='lrelu') # x2 transition
             ]
         )
 
         # upsample block
-        self.upscale_block = nn.ModuleList(
+        self.upscale = nn.ModuleList(
             [
                 UpscaleBlock(64, 64),  # x64
                 UpscaleBlock(64, 64),  # x32
@@ -323,8 +241,8 @@ class Discriminator(nn.Module):
         # fixed last block -------------
         self.last_block = nn.Sequential(
             *[
-                self.conv(
-                    256 + (image_channel if block == 0 else 0),
+                conv(
+                    256 + (channels if block == 0 else 0),
                     256,
                     3,
                     activation='lrelu',
@@ -337,27 +255,26 @@ class Discriminator(nn.Module):
         center[:, ::2, :, :] = -1
         self.register_buffer('center', center)
 
-        self.max_scale_factor = 64
-        self.n_layer = int(np.log2(self.max_scale_factor))
+        max_scale_factor = 64
+        self.n_layer = max_scale_factor.bit_length() - 1
 
     def forward(self, x0_input, lowres_x_delta, scale_factor, alpha):
         x0 = x0_input
 
-        log_scale = int(np.log2(scale_factor))
+        log_scale = scale_factor.bit_length() - 1 # int(log2)
         for i in reversed(range(log_scale)):
-            index = self.n_layer - i - 1
+            idx = self.n_layer - i - 1
 
             if i == log_scale - 1:
                 # only beginning layer
-                out = self.from_rgb[index](x0)
-            out = self.upscale_block[index](out)
+                out = self.fromImg[idx](x0)
+            out = self.upscale[idx](out)
 
             if i == log_scale - 1 and 0 <= alpha < 1:
                 # only at transition stage and top layer block
                 skip_rgb = upscale(x0)
-                skip_rgb = self.from_rgb[index + 1](skip_rgb)
+                skip_rgb = self.fromImg[idx + 1](skip_rgb)
                 out = (1 - alpha) * skip_rgb + alpha * out
-
 
         out = self.last_block(torch.cat([out, lowres_x_delta], dim=1))
         return out * self.center
