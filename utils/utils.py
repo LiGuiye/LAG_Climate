@@ -1,13 +1,35 @@
-import copy
-import json
 import os
+import time
+import json
+import copy
 import random
 import shutil
+import logging
+import numpy as np
 from bunch import Bunch
 import matplotlib.pyplot as plt
-import numpy as np
+
 import torch
 from torch.nn import functional as F
+
+
+def get_time():
+    return time.time()
+
+
+def rd(loss, unit=3):
+    """Round to given unit"""
+    return round(loss if isinstance(loss, (float,int)) else loss.item(), unit)
+
+
+def get_logger(filename, mode='a'):
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+    logger = logging.getLogger()
+    for hdlr in logger.handlers:
+        logger.removeHandler(hdlr)
+    logger.addHandler(logging.FileHandler(filename, mode=mode))
+    logger.addHandler(logging.StreamHandler())
+    return logger
 
 
 def ilog2(x):
@@ -21,19 +43,19 @@ def boolean_string(s):
     return s == 'True'
 
 
-def set_random_seed(seed=None):
+def set_random_seed(seed=None, verbose=False):
     '''
     leave seed empty to random set random seed
     '''
-    if seed is None:
-        seed = random.randint(1, 10000)
+    seed = 0 if seed is None else seed
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    print("Random Seed: ", seed)
+    if verbose:
+        print("Random Seed: ", seed)
     return seed
 
 
@@ -70,7 +92,7 @@ def get_config_from_json(json_file):
     return config, config_dict
 
 
-def remove_everything(folder):
+def remove_all(folder):
     if os.path.exists(folder):
         shutil.rmtree(folder)
 
@@ -86,7 +108,7 @@ def mkdir(dirList):
         os.makedirs(dirList, exist_ok=True)
 
 
-def get_original_model(model):
+def get_model(model):
     """
     Retrieve the original network. Use this function
     when you want to modify your network after the initialization
@@ -98,11 +120,32 @@ def get_original_model(model):
     return model
 
 
-def move_optimizer(optimizer, device):
+def move_optim(optimizer, device):
+    """Move Optimizer to target device"""
     for state in optimizer.state.values():
         for k, v in state.items():
             if torch.is_tensor(v):
                 state[k] = v.to(device)
+
+
+def scale(data, original_min, original_max, target_min, target_max):
+    """
+    Min-max stretch
+    """
+    pixel_min = data.min() if original_min is None else original_min
+    pixel_max = data.max() if original_max is None else original_max
+
+    return (data-pixel_min) / max(pixel_max-pixel_min, 1e-5) * (target_max-target_min) + target_min
+
+
+def normalize_standard(image, mean=None, std=None):
+    mean = image.mean() if mean is None else mean
+    std = image.std() if std is None else std
+    return (image - mean) / max(std, 1e-5)
+
+
+def inverse_normalize_standard(image, mean=None, std=None):
+    return image * max(std, 1e-5) + mean
 
 
 def normalize(img, entire_mean: list, entire_std: list, inverse: bool = False):
@@ -115,30 +158,6 @@ def normalize(img, entire_mean: list, entire_std: list, inverse: bool = False):
         images
     """
     images = img.clone()
-
-    def normalize_standard(image, mean, std):
-        if isinstance(image, torch.Tensor):
-            return torch.divide(
-                torch.add(image, -torch.tensor(mean)),
-                torch.maximum(torch.tensor(std), torch.tensor(1e-5)),
-            )
-        else:
-            if not isinstance(image, np.ndarray):
-                image = np.asarray(image)
-            return (image - mean) / max(std, 1e-5)
-
-    def inverse_normalize_standard(image, mean, std):
-        if isinstance(image, torch.Tensor):
-            return torch.add(
-                torch.multiply(
-                    image, torch.maximum(torch.tensor(std), torch.tensor(1e-5))
-                ),
-                torch.tensor(mean),
-            )
-        else:
-            if not isinstance(image, np.ndarray):
-                image = np.asarray(image)
-            return image * max(std, 1e-5) + mean
 
     if images.dim() == 3:
         c, _, _ = images.shape
@@ -164,23 +183,23 @@ def normalize(img, entire_mean: list, entire_std: list, inverse: bool = False):
     return images
 
 
-def build_ema(model, device=torch.device("cpu")):
+def build_ema(model, device=torch.device("cuda")):
     r"""
     Create and upload a moving average generator.
     """
-    model_ema = copy.deepcopy(get_original_model(model))
+    model_ema = copy.deepcopy(get_model(model))
     for param in model_ema.parameters():
         param.requires_grad = False
     return model_ema.to(device)
 
 
-def update_ema(model_ema, model, ema_decay=0.999, device=torch.device("cpu")):
-    named_param = dict(get_original_model(model).named_parameters())
+def update_ema(model_ema, model, ema_decay=0.999, device=torch.device("cuda")):
+    named_param = dict(get_model(model).named_parameters())
     for k, v in model_ema.named_parameters():
         v.copy_(ema_decay * v + (1 - ema_decay) * named_param[k].to(device))
 
 
-def check_cuda_availability():
+def check_cuda():
     if torch.cuda.is_available():
         device = torch.device("cuda")
         gpu_num = torch.cuda.device_count()
@@ -199,6 +218,8 @@ def upscale(feat, scale_factor: int = 2):
     if scale_factor == 1:
         return feat
     else:
+        if feat.dim() != 4:
+            feat = feat.view((*([1]*(4-feat.dim())),*feat.shape))
         return F.avg_pool2d(feat, scale_factor)
 
 
@@ -207,13 +228,8 @@ def downscale(feat, scale_factor: int = 2, mode: str = 'nearest'):
     if scale_factor == 1:
         return feat
     else:
-        feat = (
-            feat[None, :]
-            if feat.dim() == 3
-            else feat[None, :][None, :]
-            if feat.dim() == 2
-            else feat
-        )
+        if feat.dim() != 4:
+            feat = feat.view((*([1]*(4-feat.dim())),*feat.shape))
         return F.interpolate(
             feat,
             scale_factor=scale_factor,
@@ -222,21 +238,15 @@ def downscale(feat, scale_factor: int = 2, mode: str = 'nearest'):
         )
 
 
-def matplotlib_plot(hires, lores, fake, savePath=None, data_type="Solar"):
-    """
-    Return a list of matplotlib fig for logging sample images in tensorboard.
-
-    If savePath is not None, directly save the image.
-    """
+def save_plot(hires, lores, fake, savePath, data_name="Solar"):
     n, channel, h, w = hires.shape
     w_fake = fake.shape[3] if fake.dim() == 4 else fake.shape[2]
     fake_num = w_fake // w
 
     subplot_size = 6
     rows = n
-    cols = 2 + fake_num  # real_hr, real_lr, fake_hr(E.g. eps0-1)
-    matplotlib_plot_list = []
-    color_map = 'viridis' if data_type == 'Wind' else 'inferno'
+    cols = 2 + fake_num  # real_hr, real_lr, fake_hr (e.g., eps0-1)
+    color_map = 'viridis' if data_name == 'Wind' else 'inferno'
 
     for c in range(channel):
         fig, axs = plt.subplots(
@@ -244,9 +254,10 @@ def matplotlib_plot(hires, lores, fake, savePath=None, data_type="Solar"):
             nrows=rows,
             figsize=(cols * subplot_size, rows * subplot_size),
         )
-
-        axs[0, 0].set_title('Real-channel' + str(c), {'fontsize': 9})
-        axs[0, 1].set_title('Input-channel' + str(c), {'fontsize': 9})
+        if rows == 1:
+            axs = axs.reshape(1, cols)
+        axs[0, 0].set_title('Ground Truth', {'fontsize': 9})
+        axs[0, 1].set_title('Input LR', {'fontsize': 9})
 
         for i in range(n):
             vmin0, vmax0 = (
@@ -275,7 +286,7 @@ def matplotlib_plot(hires, lores, fake, savePath=None, data_type="Solar"):
             # fake_hr
             for idx in range(fake_num):
                 im = axs[i, 2 + idx].imshow(
-                    fake[i, c, :, (w * idx) : (w * (idx + 1))],
+                    fake[i, c, :, (w * idx): (w * (idx + 1))],
                     vmin=vmin0,
                     vmax=vmax0,
                     cmap=color_map
@@ -283,18 +294,9 @@ def matplotlib_plot(hires, lores, fake, savePath=None, data_type="Solar"):
                 axs[i, 2 + idx].set(xticks=[], yticks=[])
                 if i == 0:
                     axs[0, 2 + idx].set_title(
-                        'Fake-channel'
-                        + str(c)
-                        + '-std'
-                        + str(round(idx / (fake_num - 1), 2) if fake_num > 1 else 0),
-                        {'fontsize': 9},
+                        f"Output HR Std{round(idx / (fake_num - 1), 2) if fake_num > 1 else 0}",
+                        {'fontsize': 9}
                     )
-        if savePath:
-            plt.savefig(
-                savePath[:-4] + '_channel' + str(c) + '.png',
-                bbox_inches='tight',
-            )
-            plt.close()
-        else:
-            matplotlib_plot_list.append(plt.gcf())
-    return matplotlib_plot_list
+
+        plt.savefig(f"{savePath[:-4]}_channel{c}.png", bbox_inches='tight')
+        plt.close()
