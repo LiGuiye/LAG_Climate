@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="LAG_Climate",
+    name="lag",
     version="0.0.1",
     description="Generative Adversarial Models for Extreme Geospatial Downscaling",
     author="Guiye Li and Guofeng Cao",
