@@ -54,7 +54,7 @@ pip install -r requirements.txt
 
 The datasets used in this project are gridded data of wind velocity and solar irradiance covering the continental United States, obtained from the National Renewable Energy Laboratory's (NREL's) [Wind Integration National Database (WIND) Toolkit](https://www.nrel.gov/grid/wind-toolkit.html) and the [National Solar Radiation Database (NSRDB)](https://nsrdb.nrel.gov/).
 
-Pre-trained weights and corresponding model configurations can be found in `results/**/**/args` and `results/**/**/checkpoint`. Example data for training and testing are provided in the `data` folder. For training details, please see `train.py`, and refer to our Jupyter notebook [test.ipynb](test.ipynb) (also available on [Google Colab](https://colab.research.google.com/github/LiGuiye/LAG_Climate/blob/main/test.ipynb)) for generating test images.
+Pre-trained weights and corresponding model configurations can be found in [Google Drive](https://drive.google.com/drive/folders/1wzp4I6_PBPB5_7FIIcUPfDPWH2I0jtjt?usp=sharing). Example data for training and testing are provided in the `data` folder. For training details, please see `train.py`, and refer to our Jupyter notebook [test.ipynb](test.ipynb) (also available on [Google Colab](https://colab.research.google.com/github/LiGuiye/LAG_Climate/blob/main/test.ipynb)) for generating test images.
 
 ```bash
 python train.py --dataset_name Solar --lr 0.004 --batch_size 1 --epoch 15,15 --report_step 140000 --expid Solar/Solar_bs1_epoch15_lr4e-3_64X --reset True
