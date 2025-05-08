@@ -1,6 +1,6 @@
 # Generative Adversarial Models for Extreme Geospatial Downscaling
 
-[![GitHub](https://img.shields.io/badge/GitHub-LAG_Climate-white.svg)](https://github.com/LiGuiye/LAG_Climate) [![Paper](https://img.shields.io/badge/Paper-arxiv.2402.14049-B31B1B.svg)](https://arxiv.org/abs/2402.14049) [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LiGuiye/LAG_Climate/blob/main/test.ipynb)
+[![GitHub](https://img.shields.io/badge/GitHub-LAG_Climate-white.svg)](https://github.com/LiGuiye/LAG_Climate) [![Paper](https://img.shields.io/badge/Paper-JAG-B31B1B.svg)](https://www.sciencedirect.com/science/article/pii/S1569843225001888) [![Paper](https://img.shields.io/badge/Paper-arXiv-B31B1B.svg)](https://arxiv.org/abs/2402.14049) [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/LiGuiye/LAG_Climate/blob/main/test.ipynb)
 
 ## Abstract
 
@@ -72,6 +72,16 @@ If you find this work helpful, please consider citing our paper:
   author={Li, Guiye and Cao, Guofeng},
   journal={arXiv preprint arXiv:2402.14049},
   year={2024}
+}
+
+@article{li2025generative,
+  title={Generative adversarial models for extreme geospatial downscaling},
+  author={Li, Guiye and Cao, Guofeng},
+  journal={International Journal of Applied Earth Observation and Geoinformation},
+  volume={139},
+  pages={104541},
+  year={2025},
+  publisher={Elsevier}
 }
 ```
 
